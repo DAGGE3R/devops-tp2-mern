@@ -1,56 +1,165 @@
-# MERN APP
+# Guide de Configuration Docker
 
-## Vue d'Ensemble
-Ce projet est une application full-stack qui consiste en un client React et un serveur Node.js utilisant MongoDB comme base de données. Docker est utilisé pour la conteneurisation, et Docker Compose est utilisé pour orchestrer les services.
+Ce guide détaille la configuration Docker pour notre application MERN stack.
 
-## Table des Matières
-- [Technologies Utilisées](#technologies-utilisées)
-- [Variables d'Environnement](#variables-denvironnement)
-- [Configuration de Docker](#configuration-de-docker)
-- [Images Docker](#images-docker)
-- [Docker Compose](#docker-compose)
-- [Comment Exécuter le Projet](#comment-executer-le-projet)
+## Structure des fichiers Docker
 
-## Technologies Utilisées
-- **Frontend** : React
-- **Backend** : Node.js, Express
-- **Base de Données** : MongoDB
-- **Conteneurisation** : Docker, Docker Compose
+```
+project/
+├── client/
+│   └── Dockerfile
+├── server/
+│   └── Dockerfile
+└── docker-compose.yml
+```
 
-## Variables d'Environnement
-Les variables d'environnement suivantes sont utilisées dans l'application :
+## Dockerfile du Client
 
-- **REACT_APP_API_URL** : Cette variable contient l'URL de base pour le serveur API. Elle est utilisée dans le client React pour faire des requêtes au serveur.
-- **MONGO_URI** : L'URI de connexion à MongoDB utilisée par le serveur pour se connecter à l'instance MongoDB.
+```dockerfile
+FROM node:lts-alpine
 
-## Configuration de Docker
-Ce projet comprend des Dockerfiles pour le client et le serveur, qui facilitent la construction et l'exécution des services dans des conteneurs isolés. Les configurations incluent :
+WORKDIR /usr/src/app
 
-- **Client** : Un environnement Node.js pour construire l'application React. Les dépendances sont installées et l'application est construite pour une utilisation en production. Un serveur HTTP simple peut être utilisé pour servir l'application construite.
-  
-- **Serveur** : Un environnement Node.js qui installe les dépendances nécessaires et configure l'application pour écouter sur un port spécifique.
+# Copier les fichiers package d'abord pour un meilleur cache
+COPY package*.json ./
 
-## Images Docker
-Les images Docker créées pour ce projet sont les suivantes :
+# Installer les dépendances
+RUN npm install
 
-- **Image du Client** : `node:lts-alpine`
-- **Image du Serveur** : `node:lts-alpine`
-- **Image de la Base de Données** : `mongo:latest`
+# Copier le code source de l'application
+COPY . .
 
-Ces images sont spécifiées dans les Dockerfiles respectifs et sont utilisées lors de la construction et du déploiement des services.
+# Construire l'application
+RUN npm run build
 
-## Docker Compose
-Docker Compose est utilisé pour gérer les différents services de l'application, y compris le client, le serveur et MongoDB. Les services sont interconnectés, ce qui permet une communication fluide entre le client et le serveur. Le fichier de configuration spécifie les images, les ports exposés, ainsi que les variables d'environnement nécessaires pour chaque service.
+# Installer serve
+RUN npm install -g serve
 
-## Comment Exécuter le Projet
-1. Assurez-vous d'avoir Docker et Docker Compose installés sur votre machine.
-2. Clonez ce dépôt sur votre machine locale.
-3. Accédez au répertoire du projet dans votre terminal.
-4. Construisez et démarrez l'application en utilisant Docker Compose :
+# Exposer le port 3000
+EXPOSE 3000
 
-   ```bash
-   docker-compose up --build
-   ```
+# Commande de démarrage
+CMD ["serve", "-s", "build", "-l", "3000"]
+```
 
-5. Accédez au client à [http://localhost:3000](http://localhost:3000).
+Points clés :
+- Utilise `node:lts-alpine` pour une image légère
+- Copie les fichiers package séparément pour tirer parti du cache Docker
+- Construit l'application React
+- Utilise `serve` pour servir les fichiers statiques
+- Expose le port 3000
 
+## Dockerfile du Serveur
+
+```dockerfile
+FROM node:lts-alpine
+
+WORKDIR /usr/src/app
+
+# Copier les fichiers package d'abord pour un meilleur cache
+COPY package*.json ./
+
+# Installer les dépendances
+RUN npm install
+
+# Copier le code source de l'application
+COPY . .
+
+# Exposer le port 9000
+EXPOSE 9000
+
+# Commande de démarrage
+CMD ["npm", "start"]
+```
+
+Points clés :
+- Utilise la même image de base que le client
+- Expose le port 9000 pour l'API
+- Démarre le serveur avec npm start
+
+## Configuration de Docker Compose
+
+```yaml
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo
+    container_name: mongodb
+    networks:
+      - mern-network
+    volumes:
+      - mongodb_data:/data/db
+    ports:
+      - "27017:27017"
+
+  server:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: server
+    ports:
+      - "5000:5000"
+    networks:
+      - mern-network
+    depends_on:
+      - mongodb
+    environment:
+      - PORT=5000
+      - MONGO_URI=mongodb://mongodb:27017/records
+    volumes:
+      - ./server:/usr/src/app
+      - /usr/src/app/node_modules
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: client
+    ports:
+      - "3000:3000"
+    networks:
+      - mern-network
+    depends_on:
+      - server
+
+volumes:
+  mongodb_data:
+
+networks:
+  mern-network:
+    driver: bridge
+```
+
+Points clés :
+- Utilise l'image officielle de MongoDB
+- Crée un volume persistant pour les données MongoDB
+- Configure un réseau personnalisé pour la communication entre les conteneurs
+- Les variables d'environnement sont configurées pour la connexion à la base de données
+- Mappage des volumes pour un rechargement à chaud en développement
+- Mappage des ports pour chaque service :
+  - Client : 3000
+  - Serveur : 5000
+  - MongoDB : 27017
+
+## Utilisation
+
+1. Construire et démarrer les conteneurs :
+```bash
+docker-compose up --build
+```
+
+2. Arrêter les conteneurs :
+```bash
+docker-compose down
+```
+
+3. Voir les logs :
+```bash
+docker-compose logs -f
+```
+
+4. Accéder aux services :
+- Frontend : http://localhost:3000
+- API Backend : http://localhost:5000
+- MongoDB : mongodb://localhost:27017
